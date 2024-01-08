@@ -6,11 +6,16 @@
 #include "capture_engine_listener.h"
 
 #include <mfcaptureengine.h>
+#include <mfapi.h>
 #include <wrl/client.h>
+#include<flutter/method_channel.h>
+#include<flutter/standard_method_codec.h>
 
 namespace camera_windows {
-
 using Microsoft::WRL::ComPtr;
+using flutter::EncodableValue;
+using flutter::EncodableMap;
+using flutter::EncodableList;
 
 // IUnknown
 STDMETHODIMP_(ULONG) CaptureEngineListener::AddRef() {
@@ -65,6 +70,9 @@ HRESULT CaptureEngineListener::OnSample(IMFSample* sample) {
     this->observer_->UpdateCaptureTime(
         static_cast<uint64_t>(raw_time_stamp / 10));
 
+    //TODO: IsReadyForSample should define if Preview and/or ImageStreaming should be done
+    // If streaming should be done, "TransferSample" from the "observer" (in our case the CaptureController) should send flutter
+    // the rightly transformed image data over the Method Channel.
     if (!this->observer_->IsReadyForSample()) {
       // No texture target available or not previewing, just return status.
       return hr;
@@ -83,6 +91,16 @@ HRESULT CaptureEngineListener::OnSample(IMFSample* sample) {
       }
       hr = buffer->Unlock();
     }
+  }
+  return hr;
+}
+
+// IMFCaptureEngineOnSampleCallback
+HRESULT ImageStreamCallbackHandler::OnSample(IMFSample* sample) {
+  HRESULT hr = S_OK;
+
+  if (sample) {
+    this->observer_->EnrichBuffer(std::move(sample));
   }
   return hr;
 }

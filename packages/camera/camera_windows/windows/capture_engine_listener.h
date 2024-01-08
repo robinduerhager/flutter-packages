@@ -26,6 +26,8 @@ class CaptureEngineObserver {
   // Updates texture buffer
   virtual bool UpdateBuffer(uint8_t* data, uint32_t new_length) = 0;
 
+  virtual void EnrichBuffer(IMFSample* sample) = 0;
+
   // Handles capture timestamps updates.
   // Used to stop timed recordings when recorded time is exceeded.
   virtual void UpdateCaptureTime(uint64_t capture_time) = 0;
@@ -59,9 +61,27 @@ class CaptureEngineListener : public IMFCaptureEngineOnSampleCallback,
   // IMFCaptureEngineOnSampleCallback
   STDMETHODIMP_(HRESULT) OnSample(IMFSample* pSample);
 
- private:
+ protected:
   CaptureEngineObserver* observer_;
+
+ private:
   volatile ULONG ref_ = 0;
+};
+
+class ImageStreamCallbackHandler : public CaptureEngineListener {
+ public:
+  ImageStreamCallbackHandler(CaptureEngineObserver* observer)
+      : CaptureEngineListener(observer) {}
+
+  ~ImageStreamCallbackHandler() {}
+
+  // Disallow copy and move.
+  ImageStreamCallbackHandler(const ImageStreamCallbackHandler&) = delete;
+  ImageStreamCallbackHandler& operator=(const ImageStreamCallbackHandler&) =
+      delete;
+
+  // IMFCaptureEngineOnSampleCallback
+  STDMETHODIMP_(HRESULT) OnSample(IMFSample* pSample) override;
 };
 
 }  // namespace camera_windows

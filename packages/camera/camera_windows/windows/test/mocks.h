@@ -247,7 +247,7 @@ class MockCaptureController : public CaptureController {
   MOCK_METHOD(void, ResumePreview, (), (override));
   MOCK_METHOD(void, PausePreview, (), (override));
   MOCK_METHOD(void, StartRecord,
-              (const std::string& file_path, int64_t max_video_duration_ms),
+              (const std::string& file_path, int64_t max_video_duration_ms, bool should_stream),
               (override));
   MOCK_METHOD(void, StopRecord, (), (override));
   MOCK_METHOD(void, TakePicture, (const std::string& file_path), (override));

@@ -31,10 +31,12 @@ class _MyAppState extends State<MyApp> {
   bool _recordingTimed = false;
   bool _recordAudio = true;
   bool _previewPaused = false;
+  bool _isStreamingImages = false;
   Size? _previewSize;
   ResolutionPreset _resolutionPreset = ResolutionPreset.veryHigh;
   StreamSubscription<CameraErrorEvent>? _errorStreamSubscription;
   StreamSubscription<CameraClosingEvent>? _cameraClosingStreamSubscription;
+  StreamSubscription<CameraImageData>? _imageStreamSubscription;
 
   @override
   void initState() {
@@ -148,6 +150,7 @@ class _MyAppState extends State<MyApp> {
           _previewSize = null;
           _recording = false;
           _recordingTimed = false;
+          _isStreamingImages = false;
           _cameraInfo =
               'Failed to initialize camera: ${e.code}: ${e.description}';
         });
@@ -168,6 +171,7 @@ class _MyAppState extends State<MyApp> {
             _recording = false;
             _recordingTimed = false;
             _previewPaused = false;
+            _isStreamingImages = false;
             _cameraInfo = 'Camera disposed';
           });
         }
@@ -189,6 +193,28 @@ class _MyAppState extends State<MyApp> {
   Future<void> _takePicture() async {
     final XFile file = await CameraPlatform.instance.takePicture(_cameraId);
     _showInSnackBar('Picture captured to: ${file.path}');
+  }
+
+    /// Start streaming images from platform camera.
+  Future<void> startImageStream(
+      Function(CameraImageData image) onAvailable) async {
+    _imageStreamSubscription = CameraPlatform.instance
+        .onStreamedFrameAvailable(_cameraId)
+        .listen((CameraImageData imageData) {
+      onAvailable(imageData);
+    });
+    setState(() {
+      _isStreamingImages = true;
+    });
+  }
+
+  /// Stop streaming images from platform camera.
+  Future<void> stopImageStream() async {
+    await _imageStreamSubscription?.cancel();
+    _imageStreamSubscription = null;
+    setState(() {
+      _isStreamingImages = false;
+    });
   }
 
   Future<void> _recordTimed(int seconds) async {
@@ -410,6 +436,12 @@ class _MyAppState extends State<MyApp> {
                       'Record 5 seconds',
                     ),
                   ),
+                  const SizedBox(width: 5),
+                  ElevatedButton(
+                    onPressed: (_initialized) ? (!_isStreamingImages)
+                        ? () => startImageStream((image) => print(image.format.group))
+                        : stopImageStream : null,
+                    child: Text((!_isStreamingImages) ? "Start Image Stream" : "Stop Image Stream")),
                   if (_cameras.length > 1) ...<Widget>[
                     const SizedBox(width: 5),
                     ElevatedButton(

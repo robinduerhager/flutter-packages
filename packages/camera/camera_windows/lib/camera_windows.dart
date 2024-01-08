@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:math';
 
 import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:stream_transform/stream_transform.dart';
+import './type_conversion.dart';
 
 /// An implementation of [CameraPlatform] for Windows.
 class CameraWindows extends CameraPlatform {
@@ -34,6 +36,9 @@ class CameraWindows extends CameraPlatform {
   @visibleForTesting
   final StreamController<CameraEvent> cameraEventStreamController =
       StreamController<CameraEvent>.broadcast();
+
+  // The stream for vending frames to platform interface clients.
+  StreamController<CameraImageData>? _frameStreamController;
 
   /// Returns a stream of camera events for the given [cameraId].
   Stream<CameraEvent> _cameraEvents(int cameraId) =>
@@ -260,6 +265,57 @@ class CameraWindows extends CameraPlatform {
         'resumeVideoRecording() is not supported due to Win32 API limitations.');
   }
 
+    Future<void> _startPlatformStream(int cameraId) async {
+    await pluginChannel.invokeMethod<void>(
+      'startImageStreaming',
+      <String, dynamic>{
+        'cameraId': cameraId,
+        'shouldStream': true
+      }
+    );
+  }
+
+  FutureOr<void> _stopPlatformStream(int cameraId) async {
+    await pluginChannel.invokeMethod<void>(
+      'stopImageStreaming',
+      <String, dynamic>{
+          'cameraId': cameraId,
+          'shouldStream': true
+        });
+        
+    _frameStreamController = null;
+  }
+
+  void _pauseResumePlatformStream() {
+    throw CameraException('InvalidCall', 'Pause and resume are not supported for onStreamedFrameAvailable');
+  }
+
+  // A new streamed frame is available.
+  //
+  // Listening to this stream will start streaming, and canceling will stop.
+  // Pausing will throw a [CameraException], as pausing the stream would cause
+  // very high memory usage; to temporarily stop receiving frames, cancel, then
+  // listen again later.
+  //
+  //
+  // @override
+  Stream<CameraImageData> onStreamedFrameAvailable(int cameraId,
+      {CameraImageStreamOptions? options}) {
+
+      // install Stream Controller
+      _frameStreamController = StreamController<CameraImageData>(
+      onListen: () =>_startPlatformStream(cameraId),
+      onPause: _pauseResumePlatformStream,
+      onResume: _pauseResumePlatformStream,
+      onCancel: () => _stopPlatformStream(cameraId),
+    );
+    
+    return _frameStreamController!.stream;
+
+    // TODO(jokerttu): Implement image Streaming support, https://github.com/flutter/flutter/issues/97542.
+    // throw UnimplementedError('onStreamedFrameAvailable() is not implemented.');
+  }
+
   @override
   Future<void> setFlashMode(int cameraId, FlashMode mode) async {
     // TODO(jokerttu): Implement flash mode support, https://github.com/flutter/flutter/issues/97537.
@@ -397,6 +453,7 @@ class CameraWindows extends CameraPlatform {
             cameraId,
           ),
         );
+        break;
       case 'video_recorded':
         final Map<String, Object?> arguments =
             (call.arguments as Map<Object?, Object?>).cast<String, Object?>();
@@ -409,6 +466,17 @@ class CameraWindows extends CameraPlatform {
             maxDuration != null ? Duration(milliseconds: maxDuration) : null,
           ),
         );
+        break;
+      case 'imageStreamData':
+        //final Map<String, Object?> arguments = (call.arguments as Map<Object?, Object?>).cast<String, Object?>();
+        //print(arguments);
+        try {
+         _frameStreamController!
+           .add(cameraImageFromPlatformData(call.arguments as Map<dynamic, dynamic>));
+        } catch(e) {
+          print(e);
+        }
+        break;
       case 'error':
         final Map<String, Object?> arguments =
             (call.arguments as Map<Object?, Object?>).cast<String, Object?>();
@@ -418,6 +486,7 @@ class CameraWindows extends CameraPlatform {
             arguments['description']! as String,
           ),
         );
+        break;
       default:
         throw UnimplementedError();
     }

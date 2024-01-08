@@ -7,10 +7,12 @@
 
 #include <mfapi.h>
 #include <mfcaptureengine.h>
+#include <flutter/event_channel.h>
 #include <wrl/client.h>
 
 #include <memory>
 #include <string>
+#include "capture_engine_listener.h"
 
 namespace camera_windows {
 using Microsoft::WRL::ComPtr;
@@ -56,7 +58,8 @@ class RecordHandler {
   //                  for the actual video capture media type.
   HRESULT StartRecord(const std::string& file_path, int64_t max_duration,
                       IMFCaptureEngine* capture_engine,
-                      IMFMediaType* base_media_type);
+                      IMFMediaType* base_media_type,
+                      ImageStreamCallbackHandler* image_stream_callback_handlercapture_format);
 
   // Stops existing recording.
   //
@@ -98,11 +101,15 @@ class RecordHandler {
   // recordings.
   bool ShouldStopTimedRecording() const;
 
+  void GetVideoFrameSize(uint32_t& width, uint32_t& height) const;
+
+  void GetMediaSubtype(std::string& out_format);
+
  private:
   // Initializes record sink for video file capture.
   HRESULT InitRecordSink(IMFCaptureEngine* capture_engine,
-                         IMFMediaType* base_media_type);
-
+                         IMFMediaType* base_media_type, ImageStreamCallbackHandler* image_stream_callback_handler);
+  
   bool record_audio_ = false;
   int64_t max_video_duration_ms_ = -1;
   int64_t recording_start_timestamp_us_ = -1;
@@ -111,6 +118,8 @@ class RecordHandler {
   RecordState recording_state_ = RecordState::kNotStarted;
   RecordingType type_ = RecordingType::kNone;
   ComPtr<IMFCaptureRecordSink> record_sink_;
+  ComPtr<IMFMediaType> video_record_media_type_;
+
 };
 
 }  // namespace camera_windows

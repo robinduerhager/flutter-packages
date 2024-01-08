@@ -1,7 +1,7 @@
 // Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
+#pragma warning(disable : 4244)
 #include "camera.h"
 
 namespace camera_windows {
@@ -12,9 +12,13 @@ using flutter::EncodableValue;
 // Camera channel events.
 constexpr char kCameraMethodChannelBaseName[] =
     "plugins.flutter.io/camera_windows/camera";
-constexpr char kVideoRecordedEvent[] = "video_recorded";
+
+constexpr char
+    kVideoRecordedEvent[] = "video_recorded";
 constexpr char kCameraClosingEvent[] = "camera_closing";
 constexpr char kErrorEvent[] = "error";
+
+constexpr char kImageStreamData[] = "imageStreamData";
 
 // Camera error codes
 constexpr char kCameraAccessDenied[] = "CameraAccessDenied";
@@ -273,6 +277,33 @@ void CameraImpl::OnVideoRecordSucceeded(const std::string& file_path,
 
 void CameraImpl::OnVideoRecordFailed(CameraResult result,
                                      const std::string& error){};
+
+// TODO: Receive the whole metadata + databuffer Information and transform it into EncodableValues and send it to Flutter via MethodChannel.
+void CameraImpl::OnStreamReceived(std::unique_ptr<StreamData> stream_data) {
+  //HRESULT hr = S_OK;
+  auto channel = GetMethodChannel();
+
+  if (stream_data) {
+      //std::vector<uint8_t> my_vector(&data[0], &data[current_length - 1]);
+       //Transform into Flutter form
+       //Flutter form is CameraImage:
+       //https://pub.dev/documentation/camera/latest/camera/CameraImage-class.html
+      std::unique_ptr<EncodableValue> message_data = 
+          std::make_unique<EncodableValue>(
+              EncodableMap({{EncodableValue("format"), EncodableValue(stream_data->format)},
+                            {EncodableValue("width"), EncodableValue((int32_t)stream_data->width)},
+                            {EncodableValue("height"),
+              EncodableValue((int32_t)stream_data->height)},
+               {EncodableValue("planes"),
+                EncodableList{EncodableMap(
+                  {{EncodableValue("bytes"), EncodableValue(stream_data->data)},
+                   {EncodableValue("bytesPerRow"),
+                    EncodableValue(stream_data->line_stride)}
+                    })}}}));
+
+      channel->InvokeMethod(kImageStreamData, std::move(message_data));
+  }
+}
 
 void CameraImpl::OnCaptureError(CameraResult result, const std::string& error) {
   if (messenger_ && camera_id_ >= 0) {

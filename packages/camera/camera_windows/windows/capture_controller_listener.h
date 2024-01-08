@@ -21,6 +21,14 @@ enum class CameraResult {
   kAccessDenied,
 };
 
+struct StreamData {
+  std::string format = "";
+  uint32_t width = 0;
+  uint32_t height = 0;
+  std::vector<uint8_t> data = std::vector<uint8_t>();
+  LONG line_stride = 0;
+};
+
 // Interface for classes that receives callbacks on events from the associated
 // |CaptureController|.
 class CaptureControllerListener {
@@ -127,6 +135,8 @@ class CaptureControllerListener {
   // error: A string describing the error.
   virtual void OnCaptureError(CameraResult result,
                               const std::string& error) = 0;
+
+  virtual void OnStreamReceived(std::unique_ptr<StreamData> stream_data) = 0;
 };
 
 }  // namespace camera_windows

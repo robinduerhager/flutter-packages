@@ -22,6 +22,7 @@ namespace camera_windows {
 
 using Microsoft::WRL::ComPtr;
 
+
 CameraResult GetCameraResult(HRESULT hr) {
   if (SUCCEEDED(hr)) {
     return CameraResult::kSuccess;
@@ -227,6 +228,11 @@ HRESULT CaptureControllerImpl::CreateCaptureEngine() {
   if (!capture_engine_callback_handler_) {
     capture_engine_callback_handler_ =
         ComPtr<CaptureEngineListener>(new CaptureEngineListener(this));
+  }
+
+  if (!image_stream_callback_handler_) {
+    image_stream_callback_handler_ =
+        ComPtr<ImageStreamCallbackHandler>(new ImageStreamCallbackHandler(this));
   }
 
   hr = MFCreateAttributes(&attributes, 2);
@@ -497,8 +503,10 @@ HRESULT CaptureControllerImpl::FindBaseMediaTypes() {
 }
 
 void CaptureControllerImpl::StartRecord(const std::string& file_path,
-                                        int64_t max_video_duration_ms) {
+                                        int64_t max_video_duration_ms,
+                                        bool should_stream) {
   assert(capture_engine_);
+  assert(capture_engine_callback_handler_);
 
   if (!IsInitialized()) {
     return OnRecordStarted(CameraResult::kError,
@@ -530,7 +538,8 @@ void CaptureControllerImpl::StartRecord(const std::string& file_path,
   // process.
   hr = record_handler_->StartRecord(file_path, max_video_duration_ms,
                                     capture_engine_.Get(),
-                                    base_capture_media_type_.Get());
+                                    base_capture_media_type_.Get(),
+      should_stream ? image_stream_callback_handler_.Get() : nullptr);
   if (FAILED(hr)) {
     // Destroy record handler on error cases to make sure state is resetted.
     record_handler_ = nullptr;
@@ -879,6 +888,37 @@ bool CaptureControllerImpl::UpdateBuffer(uint8_t* buffer,
     return false;
   }
   return texture_handler_->UpdateBuffer(buffer, data_length);
+}
+
+void CaptureControllerImpl::EnrichBuffer(IMFSample* sample) {
+  HRESULT hr = S_OK;
+
+  ComPtr<IMFMediaBuffer> buffer;
+  ComPtr<IMF2DBuffer> buffer2d;
+  uint8_t* data;
+  LONG line_stride = 0;
+  std::unique_ptr<StreamData> stream_data;
+
+  hr = sample->ConvertToContiguousBuffer(&buffer);
+  buffer->QueryInterface<IMF2DBuffer>(&buffer2d);
+
+  if (SUCCEEDED(buffer2d->Lock2D(&data, &line_stride))) {
+    stream_data = std::make_unique<StreamData>();
+    stream_data->line_stride = line_stride;
+
+    // TODO: Get access to video_record_media_type from record_handler
+    //MFGetAttributeSize(base_capture_media_type_.Get(), MF_MT_FRAME_SIZE,
+    //                   &(stream_data->width), &(stream_data->height));
+
+    record_handler_->GetVideoFrameSize(stream_data->width, stream_data->height);
+    record_handler_->GetMediaSubtype(stream_data->format);
+
+    stream_data->data = std::vector<uint8_t>(
+        &data[0], &data[stream_data->line_stride * stream_data->height]);
+
+    capture_controller_listener_->OnStreamReceived(std::move(stream_data));
+    buffer2d->Unlock2D();
+  }
 }
 
 // Handles capture time update from each processed frame.

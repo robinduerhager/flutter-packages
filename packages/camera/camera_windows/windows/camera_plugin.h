@@ -94,13 +94,20 @@ class CameraPlugin : public flutter::Plugin,
   // Requests existing camera controller to start recording.
   // Stores result object to be handled after request is processed.
   void StartVideoRecordingMethodHandler(const EncodableMap& args,
-                                        std::unique_ptr<MethodResult<>> result);
+                                        std::unique_ptr<MethodResult<>> result,
+                                        bool should_stream = false);
 
   // Handles stopVideoRecording method calls.
   // Requests existing camera controller to stop recording.
   // Stores result object to be handled after request is processed.
   void StopVideoRecordingMethodHandler(const EncodableMap& args,
                                        std::unique_ptr<MethodResult<>> result);
+
+void StartImageStreamingMethodHandler(const EncodableMap& args,
+                                    std::unique_ptr<MethodResult<>> result);
+
+void StopImageStreamingMethodHandler(const EncodableMap& args,
+                                      std::unique_ptr<MethodResult<>> result);
 
   // Handles pausePreview method calls.
   // Requests existing camera controller to pause recording.

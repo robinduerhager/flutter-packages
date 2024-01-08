@@ -7,6 +7,7 @@
 
 #include <d3d11.h>
 #include <flutter/texture_registrar.h>
+#include <flutter/method_channel.h>
 #include <mfapi.h>
 #include <mfcaptureengine.h>
 #include <mferror.h>
@@ -26,6 +27,8 @@
 
 namespace camera_windows {
 using flutter::TextureRegistrar;
+using flutter::MethodChannel;
+using flutter::EncodableValue;
 using Microsoft::WRL::ComPtr;
 
 // Camera resolution presets. Used to request a capture resolution.
@@ -106,8 +109,11 @@ class CaptureController {
   virtual void ResumePreview() = 0;
 
   // Starts recording video.
+  // If SampleCallback provided -> set IsStreaming = true and use it, on
+  // StopRecord -> set IsStreaming = false
   virtual void StartRecord(const std::string& file_path,
-                           int64_t max_video_duration_ms) = 0;
+                           int64_t max_video_duration_ms,
+                           bool should_stream = false) = 0;
 
   // Stops the current video recording.
   virtual void StopRecord() = 0;
@@ -144,18 +150,22 @@ class CaptureControllerImpl : public CaptureController,
   void PausePreview() override;
   void ResumePreview() override;
   void StartRecord(const std::string& file_path,
-                   int64_t max_video_duration_ms) override;
+                   int64_t max_video_duration_ms,
+                   bool should_stream = false) override;
   void StopRecord() override;
   void TakePicture(const std::string& file_path) override;
 
   // CaptureEngineObserver
   void OnEvent(IMFMediaEvent* event) override;
-  bool IsReadyForSample() const override {
+  bool IsReadyForSample() const override { // TODO: return not a bool but all sample types which should be processed.
     return capture_engine_state_ == CaptureEngineState::kInitialized &&
-           preview_handler_ && preview_handler_->IsRunning();
+           (preview_handler_ && preview_handler_->IsRunning());
   }
   bool UpdateBuffer(uint8_t* data, uint32_t data_length) override;
+  void EnrichBuffer(IMFSample* sample) override;
   void UpdateCaptureTime(uint64_t capture_time) override;
+  //bool TransferSample(IMFSample* pSample) override; //TODO: This Method should transform and send the imageData to flutter via MethodChannel
+  //TODO: Give CaptureController access to the MethodChannel (I think this is more appropriate than giving a Camera access to it)
 
   // Sets capture engine, for testing purposes.
   void SetCaptureEngine(IMFCaptureEngine* capture_engine) {
@@ -248,6 +258,7 @@ class CaptureControllerImpl : public CaptureController,
   ResolutionPreset resolution_preset_ = ResolutionPreset::kMedium;
   ComPtr<IMFCaptureEngine> capture_engine_;
   ComPtr<CaptureEngineListener> capture_engine_callback_handler_;
+  ComPtr<ImageStreamCallbackHandler> image_stream_callback_handler_;
   ComPtr<IMFDXGIDeviceManager> dxgi_device_manager_;
   ComPtr<ID3D11Device> dx11_device_;
   ComPtr<IMFMediaType> base_capture_media_type_;

@@ -6,6 +6,7 @@
 
 #include <mfapi.h>
 #include <mfcaptureengine.h>
+#include <memory>
 
 #include <cassert>
 
@@ -34,6 +35,11 @@ HRESULT BuildMediaTypeForVideoCapture(IMFMediaType* src_media_type,
   }
 
   hr = new_media_type->SetGUID(MF_MT_SUBTYPE, capture_format);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  hr = new_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
   if (FAILED(hr)) {
     return hr;
   }
@@ -115,23 +121,26 @@ HRESULT BuildMediaTypeForAudioCapture(IMFMediaType** audio_record_media_type) {
 }
 
 HRESULT RecordHandler::InitRecordSink(IMFCaptureEngine* capture_engine,
-                                      IMFMediaType* base_media_type) {
+                                      IMFMediaType* base_media_type,
+                                      ImageStreamCallbackHandler* image_stream_callback_handler) {
   assert(!file_path_.empty());
   assert(capture_engine);
   assert(base_media_type);
 
   HRESULT hr = S_OK;
-  if (record_sink_) {
-    // If record sink already exists, only update output filename.
+
+  // if a file should be recorded.
+  if (record_sink_ && !image_stream_callback_handler) {
+   //  If record sink already exists, only update output filename.
     hr = record_sink_->SetOutputFileName(Utf16FromUtf8(file_path_).c_str());
 
-    if (FAILED(hr)) {
+     if (FAILED(hr)) {
       record_sink_ = nullptr;
     }
     return hr;
   }
 
-  ComPtr<IMFMediaType> video_record_media_type;
+  //ComPtr<IMFMediaType> video_record_media_type;
   ComPtr<IMFCaptureSink> capture_sink;
 
   // Gets sink from capture engine with record type.
@@ -153,9 +162,13 @@ HRESULT RecordHandler::InitRecordSink(IMFCaptureEngine* capture_engine,
     return hr;
   }
 
+  //TODO: Use any Video Format that comes from the Flutter Frontend for Image Streaming.
+  // H264 is used here for Image Recording, Uncompressed ARGB32 (BGRA_8888) for Image Streaming.
   hr = BuildMediaTypeForVideoCapture(base_media_type,
-                                     video_record_media_type.GetAddressOf(),
-                                     MFVideoFormat_H264);
+                                     video_record_media_type_.GetAddressOf(), 
+      image_stream_callback_handler ? MFVideoFormat_ARGB32
+                                    : MFVideoFormat_H264);
+  
   if (FAILED(hr)) {
     return hr;
   }
@@ -163,31 +176,41 @@ HRESULT RecordHandler::InitRecordSink(IMFCaptureEngine* capture_engine,
   DWORD video_record_sink_stream_index;
   hr = record_sink_->AddStream(
       (DWORD)MF_CAPTURE_ENGINE_PREFERRED_SOURCE_STREAM_FOR_VIDEO_RECORD,
-      video_record_media_type.Get(), nullptr, &video_record_sink_stream_index);
+      video_record_media_type_.Get(), nullptr, &video_record_sink_stream_index);
   if (FAILED(hr)) {
     return hr;
   }
 
-  if (record_audio_) {
-    ComPtr<IMFMediaType> audio_record_media_type;
-    HRESULT audio_capture_hr = S_OK;
-    audio_capture_hr =
-        BuildMediaTypeForAudioCapture(audio_record_media_type.GetAddressOf());
-
-    if (SUCCEEDED(audio_capture_hr)) {
-      DWORD audio_record_sink_stream_index;
-      hr = record_sink_->AddStream(
-          (DWORD)MF_CAPTURE_ENGINE_PREFERRED_SOURCE_STREAM_FOR_AUDIO,
-          audio_record_media_type.Get(), nullptr,
-          &audio_record_sink_stream_index);
-    }
-
-    if (FAILED(hr)) {
-      return hr;
-    }
+  // Currently audio recording is only supported for file recordings (read TODO below)
+  if (!image_stream_callback_handler) {
+      if (record_audio_) {
+        ComPtr<IMFMediaType> audio_record_media_type;
+        HRESULT audio_capture_hr = S_OK;
+        audio_capture_hr =
+            BuildMediaTypeForAudioCapture(audio_record_media_type.GetAddressOf());
+  
+        if (SUCCEEDED(audio_capture_hr)) {
+          DWORD audio_record_sink_stream_index;
+          hr = record_sink_->AddStream(
+              (DWORD)MF_CAPTURE_ENGINE_PREFERRED_SOURCE_STREAM_FOR_AUDIO,
+              audio_record_media_type.Get(), nullptr,
+              &audio_record_sink_stream_index);
+      
+          // TODO: Add Image Stream + Audio Stream Capability by adding another Audio Strema Callback Handler and remove the if (!image_stream_callback_handler) wrapping.
+          // Multiple Callbacks are supported for different streams according to the "Remarks" Chapter in https://learn.microsoft.com/en-us/windows/win32/api/mfcaptureengine/nn-mfcaptureengine-imfcapturerecordsink . 
+          //hr = record_sink_->SetSampleCallback(audio_record_sink_stream_index,
+          //                                     image_stream_callback_handler);
+        }
+  
+        if (FAILED(hr)) {
+          return hr;
+        }
+      }
   }
 
-  hr = record_sink_->SetOutputFileName(Utf16FromUtf8(file_path_).c_str());
+  hr = image_stream_callback_handler
+           ? record_sink_->SetSampleCallback(video_record_sink_stream_index, image_stream_callback_handler)
+           : record_sink_->SetOutputFileName(Utf16FromUtf8(file_path_).c_str());
 
   return hr;
 }
@@ -195,7 +218,8 @@ HRESULT RecordHandler::InitRecordSink(IMFCaptureEngine* capture_engine,
 HRESULT RecordHandler::StartRecord(const std::string& file_path,
                                    int64_t max_duration,
                                    IMFCaptureEngine* capture_engine,
-                                   IMFMediaType* base_media_type) {
+                                   IMFMediaType* base_media_type,
+                                   ImageStreamCallbackHandler* image_stream_callback_handler) {
   assert(!file_path.empty());
   assert(capture_engine);
   assert(base_media_type);
@@ -206,7 +230,7 @@ HRESULT RecordHandler::StartRecord(const std::string& file_path,
   recording_start_timestamp_us_ = -1;
   recording_duration_us_ = 0;
 
-  HRESULT hr = InitRecordSink(capture_engine, base_media_type);
+  HRESULT hr = InitRecordSink(capture_engine, base_media_type, image_stream_callback_handler);
   if (FAILED(hr)) {
     return hr;
   }
@@ -235,6 +259,7 @@ void RecordHandler::OnRecordStopped() {
     recording_start_timestamp_us_ = -1;
     recording_duration_us_ = 0;
     max_video_duration_ms_ = -1;
+    video_record_media_type_ = nullptr;
     recording_state_ = RecordState::kNotStarted;
     type_ = RecordingType::kNone;
   }
@@ -256,4 +281,22 @@ bool RecordHandler::ShouldStopTimedRecording() const {
              (static_cast<uint64_t>(max_video_duration_ms_) * 1000);
 }
 
+void RecordHandler::GetVideoFrameSize(uint32_t& width, uint32_t& height) const {
+  //TODO: video_record_media_type as member variable and store width and height per reference.
+  MFGetAttributeSize(video_record_media_type_.Get(), MF_MT_FRAME_SIZE, &width, &height);
+}
+
+void RecordHandler::GetMediaSubtype(std::string& out_format) {
+  GUID subtype;
+  video_record_media_type_->GetGUID(MF_MT_SUBTYPE, &subtype);
+
+  LPOLESTR tmp_str;
+  HRESULT ok = StringFromCLSID(subtype, &tmp_str);
+
+  if (FAILED(ok)) {
+    
+  }
+
+  out_format = Utf8FromUtf16(std::wstring(tmp_str));
+}
 }  // namespace camera_windows

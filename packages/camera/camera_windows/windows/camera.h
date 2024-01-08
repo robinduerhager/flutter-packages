@@ -113,6 +113,9 @@ class CameraImpl : public Camera {
                            const std::string& error) override;
   void OnCaptureError(CameraResult result, const std::string& error) override;
 
+  void OnStreamReceived(std::unique_ptr<StreamData> stream_data);
+  // void StartImageStream() override;
+
   // Camera
   bool HasDeviceId(std::string& device_id) const override {
     return device_id_ == device_id;
