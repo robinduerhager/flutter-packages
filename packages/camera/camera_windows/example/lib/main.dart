@@ -31,10 +31,12 @@ class _MyAppState extends State<MyApp> {
   bool _recordingTimed = false;
   bool _recordAudio = true;
   bool _previewPaused = false;
+  bool _isStreaming = false;
   Size? _previewSize;
   ResolutionPreset _resolutionPreset = ResolutionPreset.veryHigh;
   StreamSubscription<CameraErrorEvent>? _errorStreamSubscription;
   StreamSubscription<CameraClosingEvent>? _cameraClosingStreamSubscription;
+  StreamSubscription<CameraImageData>? _imageStreamSubscription;
 
   @override
   void initState() {
@@ -50,6 +52,8 @@ class _MyAppState extends State<MyApp> {
     _errorStreamSubscription = null;
     _cameraClosingStreamSubscription?.cancel();
     _cameraClosingStreamSubscription = null;
+    _imageStreamSubscription?.cancel();
+    _imageStreamSubscription = null;
     super.dispose();
   }
 
@@ -148,11 +152,24 @@ class _MyAppState extends State<MyApp> {
           _previewSize = null;
           _recording = false;
           _recordingTimed = false;
+          _isStreaming = false;
           _cameraInfo =
               'Failed to initialize camera: ${e.code}: ${e.description}';
         });
       }
     }
+  }
+
+  Future<void> startImageStream(Function(dynamic data) onAvailable) async {
+    _imageStreamSubscription = CameraPlatform.instance
+        .onStreamedFrameAvailable(_cameraId)
+        .listen(onAvailable);
+  }
+
+  /// Stop streaming images from platform camera.
+  Future<void> stopImageStream() async {
+    await _imageStreamSubscription?.cancel();
+    _imageStreamSubscription = null;
   }
 
   Future<void> _disposeCurrentCamera() async {
@@ -168,6 +185,7 @@ class _MyAppState extends State<MyApp> {
             _recording = false;
             _recordingTimed = false;
             _previewPaused = false;
+            _isStreaming = false;
             _cameraInfo = 'Camera disposed';
           });
         }
@@ -240,6 +258,22 @@ class _MyAppState extends State<MyApp> {
           });
         }
       }
+    }
+  }
+
+  Future<void> _toggleStream() async {
+    if (!_isStreaming) {
+      // Use onCancel to stop streaming event channel
+      await startImageStream((data) => print(data));
+    } else {
+      // Use onListen to stop streaming event channel
+      await stopImageStream();
+    }
+
+    if (mounted) {
+      setState(() {
+        _isStreaming = !_isStreaming;
+      });
     }
   }
 
@@ -408,6 +442,15 @@ class _MyAppState extends State<MyApp> {
                         : null,
                     child: const Text(
                       'Record 5 seconds',
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  ElevatedButton(
+                    onPressed: _initialized ? _toggleStream : null,
+                    child: Text(
+                      (_isStreaming)
+                          ? 'Stop Image Streaming'
+                          : 'Start Image Streaming',
                     ),
                   ),
                   if (_cameras.length > 1) ...<Widget>[

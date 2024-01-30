@@ -40,6 +40,9 @@ class CameraWindows extends CameraPlatform {
       cameraEventStreamController.stream
           .where((CameraEvent event) => event.cameraId == cameraId);
 
+  // The stream for vending frames to platform interface clients.
+  StreamController<CameraImageData>? _frameStreamController;
+
   @override
   Future<List<CameraDescription>> availableCameras() async {
     try {
@@ -128,6 +131,32 @@ class CameraWindows extends CameraPlatform {
         false,
       ),
     );
+  }
+
+    void _pauseResumePlatformStream() {
+    throw CameraException('InvalidCall', 'Pause and resume are not supported for onStreamedFrameAvailable');
+  }
+
+  Future<void> _startPlatformStream(int cameraId) async {}
+  Future<void> _stopPlatformStream(int cameraId) async {}
+
+  Stream<CameraImageData> onStreamedFrameAvailable(int cameraId,
+      {CameraImageStreamOptions? options}) {
+
+      final imageStreamingChannel = EventChannel('plugins.flutter.io/camera_windows/image_streaming$cameraId');
+      imageStreamingChannel.receiveBroadcastStream().listen((event) => print(event));
+      // install Stream Controller
+      _frameStreamController = StreamController<CameraImageData>(
+      onListen: () =>_startPlatformStream(cameraId),
+      onPause: _pauseResumePlatformStream,
+      onResume: _pauseResumePlatformStream,
+      onCancel: () => _stopPlatformStream(cameraId),
+    );
+
+    return _frameStreamController!.stream;
+
+    // TODO(jokerttu): Implement image Streaming support, https://github.com/flutter/flutter/issues/97542.
+    // throw UnimplementedError('onStreamedFrameAvailable() is not implemented.');
   }
 
   @override
