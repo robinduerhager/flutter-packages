@@ -199,10 +199,10 @@ void CameraPlugin::RegisterWithRegistrar(
   std::unique_ptr<CameraPlugin> plugin = std::make_unique<CameraPlugin>(
       registrar->texture_registrar(), registrar->messenger());
 
-  channel->SetMethodCallHandler(
-      [plugin_pointer = plugin.get()](const auto& call, auto result) {
-        plugin_pointer->HandleMethodCall(call, std::move(result));
-      });
+    channel->SetMethodCallHandler(
+    [plugin_pointer = plugin.get()](const auto& call, auto result) {
+    plugin_pointer->HandleMethodCall(call, std::move(result));
+    });
 
   registrar->AddPlugin(std::move(plugin));
 }

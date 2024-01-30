@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <flutter/event_channel.h>
+#include <flutter/event_stream_handler_functions.h>
+#include <flutter/event_sink.h>
 #include "camera.h"
 
 namespace camera_windows {
@@ -12,6 +15,8 @@ using flutter::EncodableValue;
 // Camera channel events.
 constexpr char kCameraMethodChannelBaseName[] =
     "plugins.flutter.io/camera_windows/camera";
+constexpr char kStreamChannelName[] =
+    "plugins.flutter.io/camera_windows/image_streaming";
 constexpr char kVideoRecordedEvent[] = "video_recorded";
 constexpr char kCameraClosingEvent[] = "camera_closing";
 constexpr char kErrorEvent[] = "error";
@@ -20,6 +25,8 @@ constexpr char kErrorEvent[] = "error";
 constexpr char kCameraAccessDenied[] = "CameraAccessDenied";
 constexpr char kCameraError[] = "camera_error";
 constexpr char kPluginDisposed[] = "plugin_disposed";
+
+
 
 std::string GetErrorCode(CameraResult result) {
   assert(result != CameraResult::kSuccess);
@@ -51,7 +58,7 @@ bool CameraImpl::InitCamera(flutter::TextureRegistrar* texture_registrar,
                             flutter::BinaryMessenger* messenger,
                             bool record_audio,
                             ResolutionPreset resolution_preset) {
-  auto capture_controller_factory =
+   auto capture_controller_factory =
       std::make_unique<CaptureControllerFactoryImpl>();
   return InitCamera(std::move(capture_controller_factory), texture_registrar,
                     messenger, record_audio, resolution_preset);
@@ -134,11 +141,45 @@ void CameraImpl::OnCreateCaptureEngineSucceeded(int64_t texture_id) {
   camera_id_ = texture_id;
   auto pending_result =
       GetPendingResultByType(PendingResultType::kCreateCamera);
+
+   auto image_stream_channel_name =
+      std::string(kStreamChannelName) + std::to_string(camera_id_);
+
+   InitImageStreamChannel(messenger_, image_stream_channel_name);
+
   if (pending_result) {
     pending_result->Success(EncodableMap(
         {{EncodableValue("cameraId"), EncodableValue(texture_id)}}));
   }
 }
+
+  bool CameraImpl::InitImageStreamChannel(flutter::BinaryMessenger* messenger,
+                            const std::string& channel_name) {
+      // Register EventChannel
+      auto eventChannel = std::make_unique<flutter::EventChannel<EncodableValue>>(
+          messenger, channel_name,
+          &flutter::StandardMethodCodec::GetInstance());
+
+      // Pass arguments and sink to the Camera as a StreamHandler without moving its
+      // ownership
+      auto handler = std::make_unique<flutter::StreamHandlerFunctions<>>(
+          [cam_ref = this](const EncodableValue* arguments,
+                           std::unique_ptr<flutter::EventSink<>>&& events)
+              -> std::unique_ptr<flutter::StreamHandlerError<>> {
+            cam_ref->sink_ = std::move(events);
+            return nullptr;
+          },
+          [cam_ref = this](const EncodableValue* arguments)
+              -> std::unique_ptr<flutter::StreamHandlerError<>> {
+            cam_ref->sink_ = nullptr;
+            return nullptr;
+          });
+
+      // Pass StreamHandlerFunctions Middleware to the EventChannel to connect this
+      // with the current Camera
+      eventChannel->SetStreamHandler(std::move(handler));
+      return true;
+  }
 
 void CameraImpl::OnCreateCaptureEngineFailed(CameraResult result,
                                              const std::string& error) {

@@ -7,6 +7,7 @@
 
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
+#include <flutter/event_sink.h>
 
 #include <functional>
 
@@ -14,9 +15,13 @@
 
 namespace camera_windows {
 
+using flutter::EncodableValue;
 using flutter::EncodableMap;
 using flutter::MethodChannel;
 using flutter::MethodResult;
+using flutter::EventSink;
+using flutter::StreamHandler;
+using flutter::StreamHandlerError;
 
 // A set of result types that are stored
 // for processing asynchronous commands.
@@ -78,6 +83,8 @@ class Camera : public CaptureControllerListener {
 // application code of processed events via the method channel.
 class CameraImpl : public Camera {
  public:
+  std::unique_ptr<EventSink<EncodableValue>> sink_;
+
   explicit CameraImpl(const std::string& device_id);
   virtual ~CameraImpl();
 
@@ -158,6 +165,9 @@ class CameraImpl : public Camera {
   // Initializes method channel instance and returns pointer it.
   MethodChannel<>* GetMethodChannel();
 
+  bool InitImageStreamChannel(flutter::BinaryMessenger* messenger,
+                              const std::string& name);
+
   // Finds pending result by type.
   // Returns nullptr if type is not present.
   std::unique_ptr<MethodResult<>> GetPendingResultByType(
@@ -166,6 +176,7 @@ class CameraImpl : public Camera {
   std::map<PendingResultType, std::unique_ptr<MethodResult<>>> pending_results_;
   std::unique_ptr<CaptureController> capture_controller_;
   std::unique_ptr<MethodChannel<>> camera_channel_;
+ // std::unique_ptr<ImageStreamHandler> image_stream_handler_;
   flutter::BinaryMessenger* messenger_ = nullptr;
   int64_t camera_id_ = -1;
   std::string device_id_;
@@ -200,6 +211,31 @@ class CameraFactoryImpl : public CameraFactory {
     return std::make_unique<CameraImpl>(device_id);
   }
 };
+
+//class ImageStreamHandler : public flutter::StreamHandler<EncodableValue> {
+// public:
+//     std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> send() {
+//        _sink->Success(EncodableValue("Hello World"));
+//        return nullptr;
+//  }
+//
+//     virtual std::unique_ptr<flutter::StreamHandlerError<EncodableValue>>
+//  OnListenInternal(
+//      const EncodableValue* arguments,
+//      std::unique_ptr<flutter::EventSink<EncodableValue>>&& events) override {
+//        _sink = std::move(events);
+//        return nullptr;
+//  };
+//
+//  virtual std::unique_ptr<flutter::StreamHandlerError<EncodableValue>>
+//  OnCancelInternal(const EncodableValue* arguments) override {
+//        _sink = nullptr;
+//        return nullptr;
+//  };
+//
+// private:
+//     std::unique_ptr<flutter::EventSink<EncodableValue>> _sink;
+//};
 
 }  // namespace camera_windows
 
